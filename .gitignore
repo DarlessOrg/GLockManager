@@ -31,3 +31,10 @@
 # Debug files
 *.dSYM/
 *.su
+
+# VIM files
+*.sw*
+
+# Main program
+prg.o
+
