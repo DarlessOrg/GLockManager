@@ -36,7 +36,7 @@ is easier since you do not need to remember how to lock/unlock.
 ```c
   GLock *basic_lock = g_lock_create_mutex("simpleton");
   if(g_lock_start_session(basic_lock)) {
-    printf("Doing some stuff with basic lock %d\n", ix);
+    printf("Lonely..I'm mister lonely...\n");
     g_lock_end_session(basic_lock);
   }
   g_lock_free_all();
@@ -46,11 +46,11 @@ Even for the read/write lock its pretty simple
 ```c
   GLock *rw_lock = g_lock_create_rw("time-sensitive");
   if(g_lock_start_read_session(rw_lock)) {
-    printf("Doing some stuff with (read) rw lock %d\n", ix);
+    printf("I'm just a reader, let me read!\n");
     g_lock_end_read_session(rw_lock);
   }
   if(g_lock_start_write_session(rw_lock)) {
-    printf("Doing some stuff with (write) rw lock %d\n", ix);
+    printf("Doing important actions with memory.\n");
     g_lock_end_write_session(rw_lock);
   }
 ```
