@@ -1,5 +1,5 @@
 # GLockManager
-Manager your GLib locks easier in C.
+Manage your GLib locks easier in C.
 
 Purpose
 =======
