@@ -36,5 +36,5 @@
 *.sw*
 
 # Main program
-prg.o
+main
 

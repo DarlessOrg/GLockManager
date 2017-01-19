@@ -1,7 +1,7 @@
-CC = gcc -g -Wall
+CC = gcc -g -Wall -std=gnu99
 LIBS = $(shell pkg-config --libs glib-2.0)
 INCLUDE = $(shell pkg-config --cflags glib-2.0)
-PRG_NAME = "prg.o"
+PRG_NAME = main
 
 all: clean compile
 
