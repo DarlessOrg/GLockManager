@@ -35,6 +35,12 @@
 # VIM files
 *.sw*
 
-# Main program
-main
+# Coverage
+coverage.info
+coverage_html
+*.gcda
+*.gcno
+*.cache
 
+# pytest
+__pycache__

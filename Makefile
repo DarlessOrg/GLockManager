@@ -1,15 +1,6 @@
-CC = gcc -g -Wall -std=gnu99
-LIBS = $(shell pkg-config --libs glib-2.0)
-INCLUDE = $(shell pkg-config --cflags glib-2.0)
-PRG_NAME = main
-
-all: clean compile
-
-compile:
-	$(CC) g_lock_manager.c main.c $(INCLUDE) $(LIBS) -o ${PRG_NAME}
+all: test
 
 test:
-	./${PRG_NAME}
-
-clean:
-	(rm -f ${PRG_NAME})
+	py.test -s tests
+	lcov --capture --directory . --output-file coverage.info
+	genhtml coverage.info --output-directory coverage_html
