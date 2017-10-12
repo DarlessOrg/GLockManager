@@ -21,16 +21,19 @@ enum g_lock_action {
   G_LOCK_ACTION_WRITE,
 };
 
+typedef struct {
+  GList *lock_list; /**< Locked indeces in a session */
+} GLockSession;
+
 struct g_lock_caller {
   char *caller; /*<< Caller function */
   uint32_t line; /*<< Caller function line number */
   time_t timestamp; /** Timestamp session was started */
+  GLockSession *session;
 };
 
-#define DEADLOCK_DEFAULT_MAX 10
 struct g_lock_stats {
   int count; /*<< Number of callers waiting/using lock */
-  int deadlock_max; /**< How big the count can get before declaring a deadlock */
   GList *call_list; /**< List of callers. Acts like a queue */
 };
 
@@ -47,9 +50,6 @@ typedef struct {
   uint32_t index;
 } GLock;
 
-typedef struct {
-  GList *lock_list; /**< Locked indeces in a session */
-} GLockSession;
 
 GLock *g_lock_create(
   const char *lock_name,

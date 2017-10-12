@@ -134,7 +134,6 @@ GLock *g_lock_create(
   GLock *lock = calloc(1, sizeof(GLock));
   lock->name = strdup(lock_name);
   lock->type = type;
-  lock->stats.deadlock_max = DEADLOCK_DEFAULT_MAX;
 
   // Initialize the main lock
   switch(type) {
@@ -479,7 +478,6 @@ bool _g_lock_start(
     lock_log("No lock provided");
     return false;
   }
-  bool deadlock = false;
   struct g_lock_caller *caller = calloc(1, sizeof(struct g_lock_caller));
   if(!caller) {
     lock_log("Failed to create caller");
@@ -488,6 +486,7 @@ bool _g_lock_start(
   caller->caller = strdup(caller_func);
   caller->line = caller_line;
   caller->timestamp = time(NULL);
+  caller->session = session;
 
   // Check if we're taking a lock out of order
   if(!_g_lock_session_check_lock(session, lock, action)) {
@@ -496,22 +495,9 @@ bool _g_lock_start(
 
   // Update the statistics for the lock
   g_mutex_lock(&lock->stats_lock);
-  if(lock->stats.count >= lock->stats.deadlock_max) {
-    lock_log("CRITICAL: Deadlock detected. Count: %d Max: %d!!",
-      lock->stats.count,
-      lock->stats.deadlock_max);
-    deadlock = true;
-  } else {
-    lock->stats.count++;
-    lock->stats.call_list = g_list_append(lock->stats.call_list, caller);
-  }
+  lock->stats.count++;
+  lock->stats.call_list = g_list_append(lock->stats.call_list, caller);
   g_mutex_unlock(&lock->stats_lock);
-
-  // If we're in a deadlock then exit now!
-  if(deadlock) {
-    free(caller);
-    return false;
-  }
 
   // Update our session information with this lock
   g_lock_session_add_lock(session, lock);
@@ -535,6 +521,46 @@ bool _g_lock_start(
   };
   _lock_log_action("LOCKED", lock->name, action);
   return true;
+}
+
+/**
+ * Search for a caller to remove from the lock's caller list
+ *
+ * @param session The current caller's session
+ * @param lock The lock that is being unlocked
+ */
+static void _g_lock_remove_caller(
+  GLockSession *session,
+  GLock *lock
+  )
+{
+  if(!session) {
+    lock_log("session is NULL");
+    return;
+  }
+  if(!lock) {
+    lock_log("lock is NULL");
+    return;
+  }
+  if(lock->stats.call_list == NULL) {
+    return;
+  }
+
+  GList *tmpl = NULL;
+  struct g_lock_caller *callerp = NULL;
+  for(tmpl = lock->stats.call_list; tmpl; tmpl = tmpl->next) {
+    callerp = tmpl->data;
+    if(callerp->session == session) {
+      lock_debug("Found matching caller. %p == %p",
+          session,
+          callerp->session);
+      _lock_free_caller(tmpl->data);
+      lock->stats.call_list = g_list_delete_link(
+        lock->stats.call_list, tmpl);
+      return;
+    }
+  }
+  lock_log("ERROR: Did not find matching caller session %p", session);
 }
 
 /**
@@ -564,14 +590,11 @@ void _g_lock_end(
   }
 
   // Update the statistics for the lock
-  GList *elem;
   g_mutex_lock(&lock->stats_lock);
+
   lock->stats.count--;
-  if(lock->stats.call_list) {
-    elem = g_list_first(lock->stats.call_list);
-    _lock_free_caller(elem->data);
-    lock->stats.call_list = g_list_delete_link(lock->stats.call_list, elem);
-  }
+  _g_lock_remove_caller(session, lock);
+
   g_mutex_unlock(&lock->stats_lock);
 
   _lock_log_action("UNLOCKING", lock->name, action);
