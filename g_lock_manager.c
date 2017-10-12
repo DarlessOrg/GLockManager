@@ -19,6 +19,9 @@ static GList *_locks = NULL;
 // The manager read/write lock
 static GRWLock _manager_rw_lock;
 
+// Max index of locks
+static uint32_t _lock_index = 0;
+
 #define DEBUG 0
 #define lock_log(...) _log(false, __FUNCTION__, __LINE__, __VA_ARGS__)
 #define lock_debug(...) _log(true, __FUNCTION__, __LINE__, __VA_ARGS__)
@@ -151,6 +154,7 @@ GLock *g_lock_create(
 
   // Add this lock to the global list of locks
   _manager_writer_lock();
+  lock->index = _lock_index++;
   _locks = g_list_append(_locks, lock);
   _manager_writer_unlock();
   return lock;
@@ -246,6 +250,7 @@ void g_lock_free_all()
 {
   _manager_writer_lock();
   g_list_free_full(_locks, _free_lock_entry);
+  _locks = NULL;
   _manager_writer_unlock();
 }
 
@@ -346,21 +351,130 @@ static void _lock_log_action(
 }
 
 /**
+ * Add the lock index to the session
+ *
+ * @param session Lock session object
+ * @param lock The lock being taken
+ */
+static bool g_lock_session_add_lock(
+  GLockSession *session,
+  GLock *lock
+  )
+{
+  if(!session) {
+    lock_log("No session provided");
+    return false;
+  }
+  if(!lock) {
+    lock_log("No lock provided");
+    return false;
+  }
+  session->lock_list = g_list_append(
+    session->lock_list,
+    GINT_TO_POINTER(lock->index));
+  return true;
+}
+
+/**
+ * If G_LOCK_ORDER_ABORT is set to 1 then abort
+ */
+static void _g_lock_abort()
+{
+  if(G_LOCK_ORDER_ABORT) {
+    lock_log("CRITICAL: Aborting");
+    abort();
+  }
+}
+
+/**
+ * Check if a lock is valid within a session
+ *
+ * @param session The session to check
+ * @param lock The lock that the caller wants to take
+ * @param action The action the caller is taking
+ * @return If all is ok then return true otherwise false
+ */
+static bool _g_lock_session_check_lock(
+  GLockSession *session,
+  GLock *lock,
+  enum g_lock_action action
+  )
+{
+  GList *tmpl = NULL;
+  char *lock_name = NULL;
+  uint32_t cur_index;
+  bool test_same = true;
+
+  if(!session || !lock) {
+    return false;
+  }
+
+  switch(lock->type) {
+    case G_LOCK_RECURSIVE:
+      test_same = false;
+    default:
+      break;
+  };
+
+
+  for(tmpl = session->lock_list; tmpl; tmpl = tmpl->next) {
+    cur_index = GPOINTER_TO_INT(tmpl->data);
+    if(test_same) {
+      if(lock->index == cur_index) {
+        lock_name = g_lock_name_by_index(cur_index);
+        lock_log(
+          "CRITICAL: [LOCK ORDER] "
+          "Attempting to take lock index %u (%s) which has already "
+          "been taken in this session.",
+          lock->index, lock->name);
+        if(lock_name) {
+          free(lock_name);
+        }
+        _g_lock_abort();
+        return false;
+      }
+    }
+    // Check if the lock was taken out of order
+    if(lock->index < cur_index) {
+      lock_name = g_lock_name_by_index(cur_index);
+      lock_log(
+        "CRITICAL: [LOCK_ORDER] "
+        "Attempting to take lock index %u (%s) which is less "
+        "then already taken lock index %u (%s).",
+        lock->index, lock->name,
+        cur_index, lock_name);
+      if(lock_name) {
+        free(lock_name);
+      }
+      _g_lock_abort();
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
  * Start a new session for the lock
  *
+ * @param session The lock session
  * @param lock The lock to create the session for
  * @param action The action to perform (for read/write locks)
  * @param caller_func The caller's function name
  * @param caller_line The caller's line number
  * @return On success true is returned otherwise false.
  */
-bool _g_lock_start_session(
+bool _g_lock_start(
+  GLockSession *session,
   GLock *lock,
   enum g_lock_action action,
   const char *caller_func,
   uint32_t caller_line
   )
 {
+  if(!session) {
+    lock_log("No session provided");
+    return false;
+  }
   if(!lock) {
     lock_log("No lock provided");
     return false;
@@ -374,6 +488,11 @@ bool _g_lock_start_session(
   caller->caller = strdup(caller_func);
   caller->line = caller_line;
   caller->timestamp = time(NULL);
+
+  // Check if we're taking a lock out of order
+  if(!_g_lock_session_check_lock(session, lock, action)) {
+    return false;
+  }
 
   // Update the statistics for the lock
   g_mutex_lock(&lock->stats_lock);
@@ -393,6 +512,9 @@ bool _g_lock_start_session(
     free(caller);
     return false;
   }
+
+  // Update our session information with this lock
+  g_lock_session_add_lock(session, lock);
 
   // Perform the lock based on the action
   _lock_log_action("LOCKING", lock->name, action);
@@ -418,18 +540,24 @@ bool _g_lock_start_session(
 /**
  * End the session for a given lock
  *
+ * @param session The lock session
  * @param lock The lock in question
  * @param action The action to perform (for read/write locks)
  * @param caller_func The caller's function
  * @param caller_line The caller's line number
  */
-void _g_lock_end_session(
+void _g_lock_end(
+  GLockSession *session,
   GLock *lock,
   enum g_lock_action action,
   const char *caller_func,
   uint32_t caller_line
   )
 {
+  if(!session) {
+    lock_log("No session provided");
+    return;
+  }
   if(!lock) {
     lock_log("No lock provided");
     return;
@@ -464,5 +592,62 @@ void _g_lock_end_session(
       }
       break;
   };
+
+  // Pop the last lock from the session object
+  session->lock_list = g_list_remove_link(
+    session->lock_list,
+    g_list_last(session->lock_list));
+
   _lock_log_action("UNLOCKED", lock->name, action);
+}
+
+/**
+ * Get lock name based on lock index
+ *
+ * The caller must free the result
+ *
+ * @param index The index to look for
+ * @return Allocated name of the lock if found otherwise NULL
+ */
+char *g_lock_name_by_index(uint32_t index)
+{
+  char *name = NULL;
+  GLock *lock;
+  GList *tmpl = NULL;
+  _manager_reader_lock();
+  for(tmpl = _locks; tmpl; tmpl = tmpl->next) {
+    lock = tmpl->data;
+    if(lock->index == index) {
+      name = strdup(lock->name);
+    }
+  }
+  _manager_reader_unlock();
+  return name;
+}
+
+/**
+ * Create a session
+ *
+ * @return New instance of GLockSession or NULL if we are out of memory
+ */
+GLockSession *g_lock_session_new()
+{
+  GLockSession *session = calloc(1, sizeof(GLockSession));
+  return session;
+}
+
+/**
+ * Free a session
+ *
+ * @param session The session to free
+ */
+void g_lock_session_free(GLockSession *session)
+{
+  if(session) {
+    if(session->lock_list) {
+      g_list_free(session->lock_list);
+      session->lock_list = NULL;
+    }
+    free(session);
+  }
 }
