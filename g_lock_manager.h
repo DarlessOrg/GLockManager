@@ -5,9 +5,13 @@
 #include <stdbool.h>
 #include <glib.h>
 
-// If this is set to 1 then if a lock is taken out of order
-// then the program will abort.
-#define G_LOCK_ORDER_ABORT 1
+typedef struct {
+  GList *locks;
+  GRWLock manager_rw_lock;
+  uint32_t lock_index;
+  bool allow_wrong_order;
+  bool debug;
+} GLockManager;
 
 enum g_lock_type {
   G_LOCK_MUTEX = 0, /*<< The simplest lock - MUTEX */
@@ -105,6 +109,11 @@ void g_lock_session_free(GLockSession *session);
   do { \
     g_lock_session_free(session); \
   } while(0)
+
+void g_lock_manager_init();
+void g_lock_manager_free();
+void g_lock_manager_set_debug(bool debug);
+void g_lock_manager_allow_wrong_order(bool allow);
 
 #endif // _G_LOCK_MANAGER_H
 

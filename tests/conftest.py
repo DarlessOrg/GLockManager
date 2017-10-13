@@ -40,8 +40,17 @@ class Utils(object):
         cflags=glib_cflags,
         g_lock_manager=g_lock_manager))
 
-  def run(self, expected=0, signal=None):
-    ret = self.do_cmd("./main", expected=expected, do_assert=False)
+  def run(self, cmd=None, expected=0, signal=None):
+    cmds = ["./main"]
+    if cmd is not None:
+      cmds.append(cmd)
+    full_cmd = " ".join(cmds)
+
+    ret = self.do_cmd(full_cmd, expected=expected, do_assert=False)
+
+    # Remove any main.gcda|gcno files that were created
+    self.do_cmd("rm main.gc*", do_assert=False)
+
     if signal is None:
       assert ret == expected
       return

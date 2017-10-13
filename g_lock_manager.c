@@ -13,16 +13,44 @@
 
 #include "g_lock_manager.h"
 
-// These are the global list of locks used by the manager
-static GList *_locks = NULL;
+static GLockManager _manager;
 
-// The manager read/write lock
-static GRWLock _manager_rw_lock;
+/**
+ * Initialize the manager structure
+ */
+void g_lock_manager_init()
+{
+  memset(&_manager, 0, sizeof(GLockManager));
+  _manager.allow_wrong_order = false;
+}
 
-// Max index of locks
-static uint32_t _lock_index = 0;
+/**
+ * Cleanup the manager
+ */
+void g_lock_manager_free()
+{
+  g_lock_free_all();
+}
 
-#define DEBUG 0
+/**
+ * Set debugging for the lock manager
+ *
+ * @param debug What to set the debug to
+ */
+void g_lock_manager_set_debug(bool debug)
+{
+  _manager.debug = debug;
+}
+
+/**
+ * Change whether a lock can be taken out of order
+ */
+void g_lock_manager_allow_wrong_order(bool allow)
+{
+  _manager.allow_wrong_order = allow;
+
+}
+
 #define lock_log(...) _log(false, __FUNCTION__, __LINE__, __VA_ARGS__)
 #define lock_debug(...) _log(true, __FUNCTION__, __LINE__, __VA_ARGS__)
 
@@ -46,7 +74,7 @@ static void _log(
   va_list ap;
   size_t size = 0;
   char *buf = NULL;
-  if(is_debug && !DEBUG) {
+  if(is_debug && !_manager.debug) {
     return;
   }
   va_start(ap, message);
@@ -87,7 +115,7 @@ static void _log(
  */
 static void _manager_reader_lock()
 {
-  g_rw_lock_reader_lock(&_manager_rw_lock);
+  g_rw_lock_reader_lock(&_manager.manager_rw_lock);
 }
 
 /**
@@ -95,7 +123,7 @@ static void _manager_reader_lock()
  */
 static void _manager_reader_unlock()
 {
-  g_rw_lock_reader_unlock(&_manager_rw_lock);
+  g_rw_lock_reader_unlock(&_manager.manager_rw_lock);
 }
 
 /**
@@ -103,7 +131,7 @@ static void _manager_reader_unlock()
  */
 static void _manager_writer_lock()
 {
-  g_rw_lock_writer_lock(&_manager_rw_lock);
+  g_rw_lock_writer_lock(&_manager.manager_rw_lock);
 }
 
 /**
@@ -111,7 +139,7 @@ static void _manager_writer_lock()
  */
 static void _manager_writer_unlock()
 {
-  g_rw_lock_writer_unlock(&_manager_rw_lock);
+  g_rw_lock_writer_unlock(&_manager.manager_rw_lock);
 }
 
 /**
@@ -153,8 +181,8 @@ GLock *g_lock_create(
 
   // Add this lock to the global list of locks
   _manager_writer_lock();
-  lock->index = _lock_index++;
-  _locks = g_list_append(_locks, lock);
+  lock->index = _manager.lock_index++;
+  _manager.locks = g_list_append(_manager.locks, lock);
   _manager_writer_unlock();
   return lock;
 }
@@ -235,7 +263,7 @@ void g_lock_free(GLock *lock)
   }
   // Remove it from the list
   _manager_writer_lock();
-  _locks = g_list_remove(_locks, lock);
+  _manager.locks = g_list_remove(_manager.locks, lock);
   _manager_writer_unlock();
 
   // Clear the lock and free the memory
@@ -248,8 +276,8 @@ void g_lock_free(GLock *lock)
 void g_lock_free_all()
 {
   _manager_writer_lock();
-  g_list_free_full(_locks, _free_lock_entry);
-  _locks = NULL;
+  g_list_free_full(_manager.locks, _free_lock_entry);
+  _manager.locks = NULL;
   _manager_writer_unlock();
 }
 
@@ -312,7 +340,7 @@ void g_lock_show_all()
   GList *elem;
   GLock *lock;
   _manager_reader_lock();
-  for(elem = _locks; elem; elem = elem->next) {
+  for(elem = _manager.locks; elem; elem = elem->next) {
     lock = elem->data;
     _print_lock_stats(lock);
   }
@@ -375,11 +403,11 @@ static bool g_lock_session_add_lock(
 }
 
 /**
- * If G_LOCK_ORDER_ABORT is set to 1 then abort
+ * If abort_lock_order is enabled then abort
  */
 static void _g_lock_abort()
 {
-  if(G_LOCK_ORDER_ABORT) {
+  if(!_manager.allow_wrong_order) {
     lock_log("CRITICAL: Aborting");
     abort();
   }
@@ -638,7 +666,7 @@ char *g_lock_name_by_index(uint32_t index)
   GLock *lock;
   GList *tmpl = NULL;
   _manager_reader_lock();
-  for(tmpl = _locks; tmpl; tmpl = tmpl->next) {
+  for(tmpl = _manager.locks; tmpl; tmpl = tmpl->next) {
     lock = tmpl->data;
     if(lock->index == index) {
       name = strdup(lock->name);

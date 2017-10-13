@@ -7,9 +7,13 @@
 
 #include "../../g_lock_manager.h"
 
+/**
+ * Define locks
+ */
 GLock *basic_lock = NULL;
 
-#define ITERATIONS 10
+
+#define ITERATIONS 1
 #define SLEEP_TIME 100000 // 100ms
 
 /**
@@ -29,17 +33,6 @@ static void _basic_thread()
 }
 
 /**
- * Show the lock state
- */
-static void _show_locks()
-{
-  for(int ix = 0; ix < 5; ix++) {
-    g_lock_show_all();
-    sleep(1);
-  }
-}
-
-/**
  * Main function that will be called at the time of execution
  *
  * @param argc How many arguments were passed in
@@ -48,14 +41,15 @@ static void _show_locks()
  */
 int main(int argc, char **argv)
 {
+  // Test with normal logging
   basic_lock = g_lock_create_mutex("simpleton");
+  GThread *basic1;
 
-  GThread *basic1 = g_thread_new("basic1", (GThreadFunc)_basic_thread, NULL);
-  GThread *basic2 = g_thread_new("basic2", (GThreadFunc)_basic_thread, NULL);
-
-  _show_locks();
+  basic1 = g_thread_new("basic1", (GThreadFunc)_basic_thread, NULL);
   g_thread_join(basic1);
-  g_thread_join(basic2);
-  g_lock_show_all();
-  g_lock_manager_free();
+
+  // Enable debug
+  g_lock_manager_set_debug(true);
+  basic1 = g_thread_new("basic1", (GThreadFunc)_basic_thread, NULL);
+  g_thread_join(basic1);
 }

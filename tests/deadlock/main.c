@@ -92,5 +92,19 @@ void _test_deadlock()
  */
 int main(int argc, char **argv)
 {
-  _test_deadlock();
+  if(argc != 2) {
+    printf("Usage: %s <safe|unsafe>\n",
+      argv[0]);
+    return 1;
+  }
+  if(!strcmp(argv[1], "safe")) {
+    _test_deadlock();
+  } else if(!strcmp(argv[1], "unsafe")) {
+    g_lock_manager_init();
+    g_lock_manager_allow_wrong_order(true);
+    _test_deadlock();
+  } else {
+    printf("Unknown action %s\n", argv[1]);
+    return 2;
+  }
 }
