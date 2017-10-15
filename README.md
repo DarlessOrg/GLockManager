@@ -68,5 +68,12 @@ Additionally for all lock types except for recursive locks there is an
 additional sanity check to ensure you are not trying to take the same lock
 you have already taken in a given session which would be a silly deadlock mistake.
 
+## Setup
+```
+./configure
+make
+sudo make install
+```
+
 ## Examples
 Look at the tests folder for example usage for different types of locks.

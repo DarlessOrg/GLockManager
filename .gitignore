@@ -44,3 +44,21 @@ coverage_html
 
 # pytest
 __pycache__
+
+# Automake temp files
+*.in
+.deps
+.libs
+*.log
+*.m4
+Makefile
+compile
+config.guess
+config.sub
+config.status
+configure
+depcomp
+install-sh
+ltmain.sh
+missing
+libtool

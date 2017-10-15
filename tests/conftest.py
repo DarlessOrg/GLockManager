@@ -3,6 +3,16 @@ import pytest
 import subprocess
 import shlex
 
+def pkg_config(pkg, libs=False, cflags=False):
+  cmds = ["pkg-config"]
+  if libs:
+    cmds.append("--libs")
+  elif cflags:
+    cmds.append("--cflags")
+  cmds.append(pkg)
+  cmd = " ".join(cmds)
+  return subprocess.check_output(shlex.split(cmd)).strip()
+
 class Utils(object):
   def __init__(self):
     self.root_path = os.getcwd()
@@ -26,19 +36,38 @@ class Utils(object):
     self.do_cmd("rm -f *.gcda *.gcno")
 
     # Compile
-    glib_libs = subprocess.check_output(shlex.split("pkg-config --libs glib-2.0")).strip()
-    glib_cflags = subprocess.check_output(shlex.split("pkg-config --cflags glib-2.0")).strip()
+    glib_libs = pkg_config("glib-2.0", libs=True)
+    glib_cflags = pkg_config("glib-2.0", cflags=True)
     g_lock_manager = "{}/g_lock_manager.c".format(self.root_path)
     self.do_cmd("gcc -g -Wall -std=gnu99 "
       "-fprofile-arcs -ftest-coverage "
       "{cflags} "
       "{g_lock_manager} "
       "main.c "
-      "{libs} "
+      "{glib_libs} "
       "-o main".format(
-        libs=glib_libs,
-        cflags=glib_cflags,
-        g_lock_manager=g_lock_manager))
+        g_lock_manager=g_lock_manager,
+        glib_libs=glib_libs,
+        cflags=glib_cflags))
+
+  def compile_lib(self, test_path):
+    self.set_path(test_path)
+
+    # Clear gcda files
+    self.do_cmd("rm -f *.gcda *.gcno")
+
+    # Compile
+    glib_libs = subprocess.check_output(shlex.split("pkg-config --libs glib-2.0")).strip()
+    glib_cflags = subprocess.check_output(shlex.split("pkg-config --cflags glib-2.0")).strip()
+    self.do_cmd("gcc -g -Wall -std=gnu99 "
+      "-fprofile-arcs -ftest-coverage "
+      "{cflags} "
+      "main.c "
+      "-lg_lock_manager "
+      "{glib_libs} "
+      "-o main".format(
+        glib_libs=glib_libs,
+        cflags=glib_cflags))
 
   def run(self, cmd=None, expected=0, signal=None):
     cmds = ["./main"]

@@ -4,7 +4,6 @@
 #include <stdint.h>
 #include <string.h>
 #include <unistd.h>
-
 #include "../../g_lock_manager.h"
 
 GLock *basic_lock = NULL;
