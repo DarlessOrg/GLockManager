@@ -1,0 +1,8 @@
+language: python
+install:
+  - pip install pytest pytest-cov
+  - sudo apt-get install lcov rubygems
+  - gem install lcoveralls
+script: make test
+after_success:
+  - lcoveralls
